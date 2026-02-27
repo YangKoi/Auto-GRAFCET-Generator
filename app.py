@@ -71,7 +71,7 @@ with col2:
                 try:
                     # 1. Cấu hình AI
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-2.5-pro') # Dùng model Pro cho logic lập trình
+                   model = genai.GenerativeModel('gemini-2.5-flash') # Chuyển sang Flash để không bị giới hạn
                     
                     # 2. Gửi lệnh cho AI
                     prompt = f"{SYSTEM_PROMPT}\n\nMô tả của người dùng:\n{user_input}"
