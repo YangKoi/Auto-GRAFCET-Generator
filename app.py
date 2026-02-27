@@ -17,30 +17,57 @@ with st.sidebar:
     st.markdown("### 💡 Hướng dẫn:")
     st.markdown("""
     1. Nhập API Key của bạn.
-    2. Viết mô tả quy trình chạy máy bằng tiếng Việt (càng chi tiết logic Cảm biến/Van/Động cơ càng tốt).
+    2. Viết mô tả quy trình máy bằng tiếng Việt.
     3. Bấm **Tạo sơ đồ** và đợi AI xử lý.
     """)
 
 st.title("🤖 Riken Viet - Auto GRAFCET Generator")
-st.markdown("Biến mô tả ngôn ngữ tự nhiên thành Sơ đồ điều khiển tuần tự (GRAFCET) trong vài giây!")
+st.markdown("Biến mô tả ngôn ngữ tự nhiên thành Sơ đồ điều khiển tuần tự (GRAFCET chuẩn IEC) trong vài giây!")
 
 # ==========================================
-# PROMPT KỸ THUẬT DÀNH CHO AI (SYSTEM PROMPT)
+# PROMPT KỸ THUẬT DÀNH CHO AI (ĐÃ NÂNG CẤP CHUẨN IEC)
 # ==========================================
 SYSTEM_PROMPT = """
-Bạn là một Kỹ sư Tự động hóa PLC chuyên nghiệp, bậc thầy về phương pháp GRAFCET (IEC 61131-3 SFC).
-Nhiệm vụ của bạn là đọc mô tả quy trình của người dùng và chuyển nó thành mã Graphviz DOT language để vẽ sơ đồ GRAFCET.
+Bạn là một Kỹ sư Tự động hóa PLC chuyên nghiệp. Nhiệm vụ của bạn là đọc quy trình và viết mã Graphviz DOT language để vẽ sơ đồ GRAFCET chuẩn IEC 61131-3.
 
-Hãy tuân thủ NGHIÊM NGẶT quy tắc vẽ Graphviz DOT sau đây để trông giống GRAFCET nhất:
-1. Chiều vẽ: rankdir=TB; node [shape=box];
-2. BƯỚC KHỞI TẠO (Initial Step): Dùng `shape=doublebox`. Ví dụ: `S0 [shape=doublebox, label="Step 0: Khởi động"];`
-3. BƯỚC THƯỜNG & HÀNH ĐỘNG (Step & Action): Dùng `shape=box`. Gộp chung Hành động vào label của Bước. 
-   Ví dụ: `S1 [shape=box, label="Step 1\nAction: Bật Bơm 1 & Mở Van"];`
-4. CHUYỂN TIẾP (Transition): Dùng mũi tên nối giữa 2 Bước, ghi Điều kiện chuyển tiếp vào `label` của mũi tên. Dùng font đậm, màu xanh hoặc đỏ cho dễ nhìn.
-   Ví dụ: `S0 -> S1 [label=" Nút nhấn START ", fontcolor="blue", penwidth=2];`
-5. Nếu có rẽ nhánh (OR) hoặc vòng lặp (Loop), hãy nối đúng tên Bước.
+HÃY TUÂN THỦ NGHIÊM NGẶT CẤU TRÚC GRAPHVIZ DƯỚI ĐÂY ĐỂ VẼ ĐÚNG CHUẨN GRAFCET (Pháp):
 
-Chỉ xuất ra MÃ DOT thuần túy, bọc trong block ```dot ... ```. KHÔNG giải thích gì thêm.
+1. KHUNG CƠ BẢN:
+digraph G {
+    rankdir=TB;
+    node [fontname="Arial"];
+    edge [penwidth=1.5, dir=none]; // Mặc định mũi tên ẩn, nối thẳng
+    
+2. BƯỚC KHỞI TẠO (Initial Step):
+    S0 [shape=box, peripheries=2, width=0.5, height=0.5, fixedsize=true, label="0"];
+
+3. BƯỚC THƯỜNG & HÀNH ĐỘNG (Nằm ngang hàng nhau):
+    // Bước chỉ chứa số thứ tự
+    S1 [shape=box, width=0.5, height=0.5, fixedsize=true, label="1"];
+    // Hành động là ô chữ nhật nằm bên phải
+    A1 [shape=box, label="Descente en\\ngrande vitesse"];
+    // Ép ngang hàng và nối với nhau
+    {rank=same; S1 -> A1;}
+
+4. CHUYỂN TIẾP (Transition) - VẠCH NGANG:
+    // Nút T là vạch ngang màu đen dẹt
+    T1 [shape=box, style=filled, fillcolor=black, width=0.6, height=0.02, label=""];
+    // Nút C là chữ chứa điều kiện
+    C1 [shape=plaintext, label="Départ du cycle"];
+    // Ép ngang hàng, nối tàng hình để xếp chữ ngay cạnh vạch
+    {rank=same; T1 -> C1 [style=invis];}
+
+5. LIÊN KẾT DỌC (Flow):
+    S0 -> T1; 
+    T1 -> S1;
+    S1 -> T2;
+
+6. VÒNG LẶP (Loop back):
+    // Phải bật mũi tên khi quay lại bước đầu
+    T3 -> S0 [dir=forward];
+}
+
+Hãy phân tích quy trình của người dùng và xuất ra DUY NHẤT mã DOT bọc trong block ```dot ... ```. Không giải thích gì thêm. Tuyệt đối không được sai cú pháp DOT.
 """
 
 # ==========================================
@@ -50,12 +77,17 @@ col1, col2 = st.columns([1, 1.2])
 
 with col1:
     st.subheader("📝 Nhập yêu cầu bài toán (Sequence)")
-    user_input = st.text_area(
-        "Mô tả quy trình hoạt động của hệ thống:", 
-        height=300,
-        value="Khi hệ thống có điện, nằm ở Bước Khởi tạo.\nNgười dùng ấn nút START, chuyển sang Bước 1: Bật Bơm cấp nước.\nKhi Cảm biến Mức Cao (High Level) kích hoạt, chuyển sang Bước 2: Tắt Bơm cấp nước, Mở Van Xả và Bật Động cơ khuấy.\nĐợi Timer 10 giây đếm xong, chuyển sang Bước 3: Tắt Động cơ khuấy.\nKhi Cảm biến Mức Thấp (Low Level) kích hoạt, Tắt Van Xả và quay ngược lại Bước Khởi tạo để chờ chu kỳ mới."
-    )
+    # Tôi để sẵn đoạn text giống hệt bài toán "Máy khoan (Perceuse)" trong ảnh của bạn để test
+    default_text = """Bắt đầu ở bước 0 (Chờ).
+Khi có tín hiệu 'Départ du cycle', chuyển sang bước 1.
+Ở bước 1, thực hiện hành động 'Descente en grande vitesse' (Hạ dao tốc độ cao).
+Khi đạt 'Approche terminée' (Đến gần), chuyển sang bước 2.
+Ở bước 2, thực hiện 'Descente en petite vitesse' (Hạ dao tốc độ chậm để khoan).
+Khi 'Pièce percée' (Khoan xong), chuyển sang bước 3.
+Ở bước 3, thực hiện 'Remonter la perceuse' (Rút mũi khoan lên).
+Khi đạt 'Perceuse en position haute' (Mũi khoan ở vị trí trên cùng), quay lại bước 0."""
     
+    user_input = st.text_area("Mô tả quy trình hoạt động của hệ thống:", height=300, value=default_text)
     generate_btn = st.button("🚀 SINH SƠ ĐỒ GRAFCET (BẰNG AI)", type="primary", use_container_width=True)
 
 with col2:
@@ -69,26 +101,25 @@ with col2:
         else:
             with st.spinner("🧠 AI đang phân tích logic tuần tự và biên dịch ra Graphviz..."):
                 try:
-                    # 1. Cấu hình AI
+                    # Cấu hình AI
                     genai.configure(api_key=api_key)
-                    # SỬ DỤNG MODEL FLASH ĐỂ KHÔNG BỊ LỖI QUOTA (GIỚI HẠN)
                     model = genai.GenerativeModel('gemini-2.5-flash') 
                     
-                    # 2. Gửi lệnh cho AI
+                    # Gọi AI
                     prompt = f"{SYSTEM_PROMPT}\n\nMô tả của người dùng:\n{user_input}"
                     response = model.generate_content(prompt)
                     
-                    # 3. Trích xuất mã DOT từ kết quả của AI
+                    # Lấy mã DOT
                     response_text = response.text
                     dot_match = re.search(r'```dot\n(.*?)\n```', response_text, re.DOTALL)
                     
                     if dot_match:
                         dot_code = dot_match.group(1)
                         
-                        # Hiển thị sơ đồ
+                        # Hiển thị biểu đồ
                         st.graphviz_chart(dot_code)
                         
-                        # Hiện nút xem code cho dân kỹ thuật
+                        # Xem mã nguồn
                         with st.expander("👀 Xem mã Graphviz DOT"):
                             st.code(dot_code, language="dot")
                     else:
